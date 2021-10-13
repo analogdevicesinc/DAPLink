@@ -29,6 +29,11 @@
 #endif
 #include "target_family.h"
 
+#ifdef MAXIM_BRIDGE_MODE
+#include "rtc_.h"
+#include "bridge.h"
+#endif
+
 UART_Configuration UART_Config;
 
 /** @brief  Vitual COM Port initialization
@@ -152,7 +157,7 @@ int32_t USBD_CDC_ACM_PortSetControlLineState(uint16_t ctrl_bmp)
     uart_set_control_line_state(ctrl_bmp);
     return (1);
 }
-
+#ifndef MAXIM_BRIDGE_MODE
 void cdc_process_event()
 {
     int32_t len_data = 0;
@@ -193,3 +198,68 @@ void cdc_process_event()
     // Always process events
     main_cdc_send_event();
 }
+#else
+void cdc_process_event()
+{
+    uint8_t data[64];
+	int32_t len_data = sizeof(data);
+	
+	if ( bridge_get_mode() == BRIDGE_MODE_IDLE) {
+		len_data = USBD_CDC_ACM_DataFree();
+
+		if (len_data > sizeof(data)) {
+			len_data = sizeof(data);
+		}
+
+		if (len_data) {
+			len_data = uart_read_data(data, len_data);
+		}
+
+		if (len_data) {
+			if (USBD_CDC_ACM_DataSend(data , len_data)) {
+				main_blink_cdc_led(MAIN_LED_FLASH);
+			}
+		}	
+		
+		len_data = uart_write_free();
+
+		if (len_data > sizeof(data)) {
+			len_data = sizeof(data);
+		}
+	}
+
+	if (len_data) {
+		len_data = USBD_CDC_ACM_DataRead(data, len_data);
+	}
+
+    if (len_data) {
+		int ret;
+		static unsigned int tm = 0;
+		
+		if ( bridge_get_mode() != BRIDGE_MODE_IDLE) {
+			if (RTC_GetTimeMS() > (tm + 3000)) {
+				bridge_idle_timeout();
+			}
+		}
+
+		//
+		ret = bridge_check_main_cmd(data, len_data);
+		if (ret != 0) { // is cmd proceeded ?
+            if ( bridge_get_mode() != BRIDGE_MODE_IDLE) {
+                bridge_process(data, len_data);
+            } else {
+                if (uart_write_data(data, len_data)) {
+                    main_blink_cdc_led(MAIN_LED_FLASH);
+                }
+            }
+        }
+        
+        if ( bridge_get_mode() != BRIDGE_MODE_IDLE) {
+            tm = RTC_GetTimeMS();
+        }
+    }
+
+    // Always process events
+    main_cdc_send_event();
+}
+#endif

@@ -65,6 +65,9 @@ void software_init_hook (void) {}
 /* Disables part of C/C++ runtime startup/teardown */
 void __libc_init_array (void) {}
 #endif
+#ifdef MAXIM_BRIDGE_MODE
+#include "bridge.h"
+#endif
 
 // Event flags for main task
 // Timers events
@@ -339,6 +342,11 @@ void main_task(void * arg)
     osTimerId_t tmr_id = osTimerNew(timer_task_30mS, osTimerPeriodic, NULL, NULL);
 #endif
     osTimerStart(tmr_id, 3);
+	
+#ifdef MAXIM_BRIDGE_MODE
+	bridge_init();
+#endif
+	
     while (1) {
         flags = osThreadFlagsWait(FLAGS_MAIN_RESET             // Put target in reset state
                        | FLAGS_MAIN_90MS            // 90mS tick
