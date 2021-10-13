@@ -1,0 +1,3 @@
+progen generate -f projects.yaml -p max32625_max32620fthr_if -t uvision
+progen generate -f projects.yaml -p max32625_max32630fthr_if -t uvision
+progen generate -f projects.yaml -p max32625_max32666fthr_if -t uvision

@@ -46,6 +46,10 @@
 #include "flash_manager.h"
 #endif
 
+#ifdef MAXIM_BRIDGE_MODE
+#include "bridge.h"
+#endif
+
 // Event flags for main task
 // Timers events
 #define FLAGS_MAIN_90MS         (1 << 0)
@@ -293,6 +297,11 @@ void main_task(void * arg)
     // Start timer tasks
     osTimerId_t tmr_id = osTimerNew(timer_task_30mS, osTimerPeriodic, NULL, NULL);
     osTimerStart(tmr_id, 3);
+	
+#ifdef MAXIM_BRIDGE_MODE
+	bridge_init();
+#endif
+	
     while (1) {
         flags = osThreadFlagsWait(FLAGS_MAIN_RESET             // Put target in reset state
                        | FLAGS_MAIN_90MS            // 90mS tick

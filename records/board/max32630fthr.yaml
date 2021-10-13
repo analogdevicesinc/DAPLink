@@ -5,3 +5,18 @@ common:
         family:
             - source/family/maxim/max32630/target.c
             - source/family/maxim/target_reset_max32xxx.c
+        bridge:
+            - ../bridge/bridge.c
+            - ../bridge/bridge_i2c.c
+            - ../bridge/bridge_spi.c
+            - ../bridge/bridge_uart.c
+        bridge_drivers:
+            - ../bridge/drivers/gpio_.c
+            - ../bridge/drivers/i2c_.c
+            - ../bridge/drivers/rtc_.c
+            - ../bridge/drivers/spim_.c
+    macros:
+        - MAXIM_BRIDGE_MODE=1
+    includes:
+        - ../bridge
+        - ../bridge/drivers
