@@ -88,6 +88,10 @@ module:
         - records/rtos/rtos-cm4.yaml
         - records/hic_hal/max32625.yaml
         - records/usb/usb-hid.yaml
+    hic_max32690: &module_hic_max32690
+        - records/rtos/rtos-cm4.yaml
+        - records/hic_hal/max32690.yaml
+        - records/usb/usb-hid.yaml
     hic_nrf52820: &module_hic_nrf52820
         - records/rtos/rtos-cm4.yaml
         - records/hic_hal/nrf52820.yaml
@@ -177,6 +181,15 @@ projects:
     max32625_if:
         - *module_if
         - *module_hic_max32625
+        - records/family/all_family.yaml
+        - records/usb/usb-bulk.yaml
+    max32690_bl:
+        - *module_bl
+        - records/hic_hal/max32690.yaml
+        - records/board/max32690_bl.yaml
+    max32690_if:
+        - *module_if
+        - *module_hic_max32690
         - records/family/all_family.yaml
         - records/usb/usb-bulk.yaml
     nrf52820_bl:
@@ -562,6 +575,10 @@ projects:
         - *module_if
         - *module_hic_max32625
         - records/board/max78000fthr.yaml
+    max32690_max32690evkit_if:
+        - *module_if
+        - *module_hic_max32690
+        - records/board/max32690evkit.yaml
     nrf52820_microbit_bl:
         - *module_bl
         - records/hic_hal/nrf52820.yaml

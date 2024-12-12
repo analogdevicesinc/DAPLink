@@ -36,6 +36,8 @@
 #include "max32620.h"
 #elif defined (INTERFACE_MAX32625)
 #include "max32625.h"
+#elif defined (INTERFACE_MAX32690)
+#include "max32690.h"
 #elif defined (INTERFACE_SAM3U2C)
 #include "sam3u2c.h"
 #elif defined (INTERFACE_STM32F103XB)
