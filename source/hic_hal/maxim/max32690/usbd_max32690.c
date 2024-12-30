@@ -164,10 +164,10 @@ void USBD_Init (void)
     reset_state();
     MXC_USB_IrqEnable(MAXUSB_EVENT_NOVBUS);
     MXC_USB_IrqEnable(MAXUSB_EVENT_VBUS);
-    MXC_USB_IrqDisable(MAXUSB_EVENT_BACT);
-    MXC_USB_IrqDisable(MAXUSB_EVENT_BRST);
-    MXC_USB_IrqDisable(MAXUSB_EVENT_SUSP);
-    MXC_USB_IrqDisable(MAXUSB_EVENT_SUDAV);
+    MXC_USB_IrqEnable(MAXUSB_EVENT_BACT);
+    MXC_USB_IrqEnable(MAXUSB_EVENT_BRST);
+    MXC_USB_IrqEnable(MAXUSB_EVENT_SUSP);
+    MXC_USB_IrqEnable(MAXUSB_EVENT_SUDAV);
 
     NVIC_EnableIRQ(USB_IRQn);
 }
@@ -184,15 +184,6 @@ void USBD_Connect (BOOL con)
         MXC_USB_Connect();
     } else {
         MXC_USB_Disconnect();
-    }
-}
-
-void TMR0_IRQHandler(void)
-{
-    MXC_TMR_ClearFlags(CONT_TIMER);
-
-    if (usbd_configured()) {
-        USBD_CDC_ACM_SOF_Event();
     }
 }
 
@@ -223,44 +214,7 @@ void USBD_SetAddress (U32 adr, U32 setup)
  */
 void USBD_Configure (BOOL cfg)
 {
-    #define SOF_INT_US  1000
 
-    if (cfg) {
-        mxc_tmr_cfg_t tmr;
-        uint32_t periodTicks = MXC_TMR_GetPeriod(CONT_TIMER, MXC_TMR_APB_CLK, 32, SOF_INT_US);
-
-        /*
-        Steps for configuring a timer for PWM mode:
-        1. Disable the timer
-        2. Set the prescale value
-        3  Configure the timer for continuous mode
-        4. Set polarity, timer parameters
-        5. Enable Timer
-        */
-
-        MXC_TMR_Shutdown(CONT_TIMER);
-
-        tmr.pres = TMR_PRES_32;
-        tmr.mode = TMR_MODE_CONTINUOUS;
-        tmr.bitMode = TMR_BIT_MODE_32;
-        tmr.clock = MXC_TMR_APB_CLK;
-        tmr.cmp_cnt = periodTicks; //SystemCoreClock*(1/interval_time);
-        tmr.pol = 0;
-
-        if (MXC_TMR_Init(CONT_TIMER, &tmr, 0) != E_NO_ERROR) {
-            return;
-        }
-
-        MXC_TMR_EnableInt(CONT_TIMER);
-
-        NVIC_EnableIRQ(TMR0_IRQn);
-
-        MXC_TMR_Start(CONT_TIMER);
-
-    } else {
-        // Disable tmr
-        MXC_TMR_Stop(CONT_TIMER);
-    }
 }
 
 /*
@@ -300,7 +254,9 @@ void USBD_DirCtrlEP (U32 dir)
  */
 void USBD_EnableEP (U32 EPNum)
 {
-
+    if (!(EPNum & USB_ENDPOINT_DIRECTION_MASK)) {
+        MXC_USBHS->introuten |= (1 << EPNum);
+    }
 }
 
 /*
@@ -312,7 +268,9 @@ void USBD_EnableEP (U32 EPNum)
  */
 void USBD_DisableEP (U32 EPNum)
 {
-
+    if (!(EPNum & USB_ENDPOINT_DIRECTION_MASK)) {
+        MXC_USBHS->introuten &= ~(1 << EPNum);
+    }
 }
 
 /*
@@ -367,10 +325,6 @@ U32 USBD_ReadEP (U32 EPNum, U8 *pData, U32 size)
 
     EPNum &= EPNUM_MASK;
 
-    if ((EPNum == 0) && !setup_waiting){
-        return 0;
-    }
-
     if ((EPNum == 0) && setup_waiting) {
         cnt = sizeof(USB_SETUP_PACKET);
 
@@ -415,7 +369,7 @@ U32 USBD_WriteEP (U32 EPNum, U8 *pData, U32 cnt)
     }
 
     if (EPNum == 0) {
-        if ((cnt == 0) && !ep0_expect_zlp) {
+        if ((cnt == 0) && (pData == NULL)) {
             // This is a status stage ACK.
             MXC_USB_Ackstat(0);
             return 0;
@@ -467,15 +421,15 @@ static void event_in_data(uint32_t irqs)
             continue;
         }
 
-        if (expect_in_stage[ep]) {
-            expect_in_stage[ep] = 0;
-            MXC_USB_Ackstat(0);
-        }
-
         if (USBD_P_EP[ep]) {
+            expect_in_stage[ep] = 0;
             USBD_P_EP[ep](USBD_EVT_IN);
-            if (!expect_in_stage[ep]) { // no more data to send
-                MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_INPKTRDY | MXC_F_USBHS_CSR0_DATA_END;
+            if (expect_in_stage[ep] == 0) {
+                if (!ep)
+                    MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_INPKTRDY | MXC_F_USBHS_CSR0_DATA_END;
+    
+                // No more data to send.. ACK to Host
+                MXC_USB_Ackstat(0);
             }
         }
     }
@@ -506,6 +460,7 @@ static void event_out_data(uint32_t irqs)
                 continue;
             }
             if (MXC_USBHS->count0 == 0) {
+                MXC_USB_Ackstat(0);
                 continue;
             } else {
                 /* Write as much as we can to the request buffer */
@@ -522,16 +477,14 @@ static void event_out_data(uint32_t irqs)
                 MXC_USBHS->outcsrl &= ~MXC_F_USBHS_OUTCSRL_OUTPKTRDY;
 
                 /* Disable interrupt for this endpoint */
-                MXC_USBHS->introuten &= ~(1 << ep);
+                //MXC_USBHS->introuten &= ~(1 << ep);
+
+                MXC_USB_Ackstat(0);
 
                 continue;
             }
         }
 
-        if (expect_out_stage[ep]) {
-            expect_out_stage[ep] = 0;
-            MXC_USB_Ackstat(0);
-        }
 #ifdef __RTX
         if (USBD_RTX_EPTask[ep]) {
             isr_evt_set(USBD_EVT_OUT, USBD_RTX_EPTask[ep]);
@@ -539,6 +492,7 @@ static void event_out_data(uint32_t irqs)
 #else
         if (USBD_P_EP[ep]) {
         
+            expect_out_stage[ep] = 0;
             USBD_P_EP[ep](USBD_EVT_OUT);
         
             if (expect_out_stage[ep] == 0) {
@@ -550,7 +504,15 @@ static void event_out_data(uint32_t irqs)
                     MXC_USBHS->outcsrl &= ~MXC_F_USBHS_OUTCSRL_OUTPKTRDY;
 
                     /* Disable interrupt for this endpoint */
-                    MXC_USBHS->introuten &= ~(1 << ep);
+                    //MXC_USBHS->introuten &= ~(1 << ep);
+                }
+                MXC_USB_Ackstat(0);
+            } else {
+                if (!ep) {
+                /* More data */
+                    MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_SERV_OUTPKTRDY;
+                } else {
+                    MXC_USBHS->outcsrl &= ~MXC_F_USBHS_OUTCSRL_OUTPKTRDY;
                 }
             }
         }
@@ -565,6 +527,7 @@ void USBD_Handler(void)
     uint32_t in_flags, out_flags, MXC_USB_flags, MXC_USB_mxm_flags;
     int i, aborted = 0;
     uint32_t intrusb, intrusben, intrin, intrinen, introut, introuten, mxm_int, mxm_int_en;
+    uint32_t setup_flag = 0;
 
     /* Save current index register */
     saved_index = MXC_USBHS->index;
@@ -589,7 +552,6 @@ void USBD_Handler(void)
     mxm_int_en = MXC_USBHS->mxm_int_en;
     MXC_USB_mxm_flags = mxm_int & mxm_int_en;
     MXC_USBHS->mxm_int = MXC_USB_mxm_flags;
-
 
     if (!!(MXC_USB_flags & MXC_F_USBHS_INTRUSB_RESET_INT)) { //BRST
         if (suspended) {
@@ -618,10 +580,6 @@ void USBD_Handler(void)
         }
 #endif
     }
-    
-    if (!!(MXC_USB_flags & MXC_F_USBHS_INTRUSB_RESET_INT)) {//BRSTDN
-        reset_state();
-    } 
     
     /* suspend interrupt */
     if (!!(MXC_USB_flags & MXC_F_USBHS_INTRUSB_SUSPEND_INT)) {
@@ -689,12 +647,10 @@ void USBD_Handler(void)
         if (!aborted) {
             if ((MXC_USB_GetSetupPhase() == SETUP_IDLE) && (MXC_USBHS->csr0 & MXC_F_USBHS_CSR0_OUTPKTRDY)) {
                 /* Flag that we got a SETUP packet */
-                setup_waiting = 1;
+                setup_flag = 1;
                 /* Remove this from the IN flags so that it is not erroneously processed as data */
                 in_flags &= ~MXC_F_USBHS_INTRIN_EP0_IN_INT;
-                //if (USBD_P_EP[0]) {
-                //    USBD_P_EP[0](USBD_EVT_SETUP);
-                //}
+
             } else {
                 /* Otherwise, we are in endpoint 0 data IN/OUT */
                 /* Fix interrupt flags so that OUTs are processed properly */
@@ -707,29 +663,19 @@ void USBD_Handler(void)
         }
     }
 
-    /* do cleanup in cases of bus reset */
-    if (!!(MXC_USB_flags & MXC_F_USBHS_INTRUSB_RESET_INT)) {
-        MXC_USB_SetSetupPhase(SETUP_IDLE);
-
-        /* kill any pending requests */
-        for (i = 0; i < MXC_USBHS_NUM_EP; i++) {
-            MXC_USB_ResetEp(i);
-        }
-        /* no need to process events after reset */
-        return;
-    }
-
-    if (setup_waiting) {
+    if (setup_flag) {
 #ifdef __RTX
         if (USBD_RTX_EPTask[0]) {
             isr_evt_set(USBD_EVT_SETUP, USBD_RTX_EPTask[0]);
         }
 #else
+        setup_waiting = 1;
         if (USBD_P_EP[0]) {
             USBD_P_EP[0](USBD_EVT_SETUP);
         }
 #endif
     }
+
     if (in_flags) {
         event_in_data(in_flags);
     }
@@ -739,7 +685,11 @@ void USBD_Handler(void)
     }
 
 
-
+    if (!!(MXC_USB_flags & MXC_F_USBHS_INTRUSB_SOF_INT)) {
+        if (usbd_configured()) {
+            USBD_CDC_ACM_SOF_Event();
+        }
+    }
     /* Restore register index before exiting ISR */
     MXC_USBHS->index = saved_index;
 

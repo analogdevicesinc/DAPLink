@@ -299,7 +299,7 @@ int MXC_USB_ConfigEp(unsigned int ep, maxusb_ep_type_t type, unsigned int size)
             MXC_USBHS->outcsru = MXC_F_USBHS_OUTCSRU_DPKTBUFDIS;
             MXC_USBHS->outmaxp = size;
             ep_size[ep] = size;
-            MXC_USBHS->introuten &= ~(1 << ep);
+            //MXC_USBHS->introuten &= ~(1 << ep);
             break;
         case MAXUSB_EP_TYPE_IN:
             MXC_USBHS->incsrl = MXC_F_USBHS_INCSRL_CLRDATATOG;
@@ -445,8 +445,8 @@ int MXC_USB_ResetEp(unsigned int ep)
         MXC_USBHS->index = ep;
 
         /* Default to disabled */
-        MXC_USBHS->intrinen &= ~(1 << ep);
-        MXC_USBHS->introuten &= ~(1 << ep);
+        //MXC_USBHS->intrinen &= ~(1 << ep);
+        //MXC_USBHS->introuten |= (1 << ep);
 
         if (MXC_USBHS->incsrl & MXC_F_USBHS_INCSRL_INPKTRDY) {
             /* Per musbhsfc_pg, only flush FIFO if IN packet loaded */
@@ -1026,11 +1026,9 @@ int MXC_USB_WriteEndpoint(MXC_USB_Req_t *req)
     load_fifo(get_fifo_ptr(ep), req->data, len);
 
     if (!ep) {
-        if (req->actlen == req->reqlen) {
-            /* Implicit status-stage ACK, move state machine back to IDLE */
-            setup_phase = SETUP_IDLE;
-            MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_INPKTRDY;// | MXC_F_USBHS_CSR0_DATA_END;
-        } 
+        /* Implicit status-stage ACK, move state machine back to IDLE */
+        setup_phase = SETUP_IDLE;
+        MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_INPKTRDY;
     } else {
         /* Arm for transmit to host */
         MXC_USBHS->incsrl = MXC_F_USBHS_INCSRL_INPKTRDY;
@@ -1074,34 +1072,38 @@ int MXC_USB_ReadEndpoint(MXC_USB_Req_t *req)
     /* Select endpoint */
     MXC_USBHS->index = ep;
 
-    /* Since the OUT interrupt for EP 0 doesn't really exist, only do this logic for other endpoints */
-    if (ep) {
-        armed = 0;
-
-        if (!armed) {
-            /* EP0 or no free DMA channel found, fall back to PIO */
-
-            /* See if data already in FIFO for this EP */
-            if (MXC_USBHS->outcsrl & MXC_F_USBHS_OUTCSRL_OUTPKTRDY) {
-                reqsize = MXC_USBHS->outcount;
-                if (reqsize > (req->reqlen - req->actlen)) {
-                    reqsize = (req->reqlen - req->actlen);
-                }
-
-                unload_fifo(&req->data[req->actlen], get_fifo_ptr(ep), reqsize);
-
-                req->actlen += reqsize;
-
-                /* Signal to H/W that FIFO has been read */
-                MXC_USBHS->outcsrl &= ~MXC_F_USBHS_OUTCSRL_OUTPKTRDY;
-                {
-                    /* Not done, more data requested */
-                    MXC_USBHS->introuten |= (1 << ep);
-                }
-            } else {
-                /* No data, will need an interrupt to service later */
-                MXC_USBHS->introuten |= (1 << ep);
+    if (!ep) {
+        if (MXC_USBHS->csr0 & MXC_F_USBHS_CSR0_OUTPKTRDY) {
+            reqsize = MXC_USBHS->outcount;
+            if (reqsize > (req->reqlen - req->actlen)) {
+                reqsize = (req->reqlen - req->actlen);
             }
+
+            unload_fifo(&req->data[req->actlen], get_fifo_ptr(ep), reqsize);
+
+            req->actlen += reqsize;
+        }
+
+    } else {
+        /* See if data already in FIFO for this EP */
+        if (MXC_USBHS->outcsrl & MXC_F_USBHS_OUTCSRL_OUTPKTRDY) {
+            reqsize = MXC_USBHS->outcount;
+            if (reqsize > (req->reqlen - req->actlen)) {
+                reqsize = (req->reqlen - req->actlen);
+            }
+
+            unload_fifo(&req->data[req->actlen], get_fifo_ptr(ep), reqsize);
+
+            req->actlen += reqsize;
+
+            /* Signal to H/W that FIFO has been read */
+            MXC_USBHS->outcsrl &= ~MXC_F_USBHS_OUTCSRL_OUTPKTRDY;
+            /* Not done, more data requested */
+            //MXC_USBHS->introuten |= (1 << ep);
+
+        } else {
+            /* No data, will need an interrupt to service later */
+            //MXC_USBHS->introuten |= (1 << ep);
         }
     }
 
