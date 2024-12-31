@@ -404,6 +404,8 @@ int MXC_USB_RemoveRequest(MXC_USB_Req_t *req);
  */
 int MXC_USB_WriteEndpoint(MXC_USB_Req_t *req);
 
+int MXC_USB_WriteEPPkg(MXC_USB_Req_t *req);
+
 /** 
  * @brief Arm the selected endpoint to receive data from the host
  * 
