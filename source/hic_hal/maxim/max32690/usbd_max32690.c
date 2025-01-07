@@ -37,38 +37,8 @@
 volatile int configured;
 static volatile int setup_waiting;
 volatile int suspended;
-static MXC_USB_Req_t setup_req;
 static MXC_USB_Req_t out_requests[MXC_USBHS_NUM_EP];
 static uint8_t out_data[MXC_USBHS_NUM_EP][64];
-
-static void status_stage_callback(void *cbdata);
-
-static const MXC_USB_Req_t setup_req_init = {
-  0,                       /* ep */
-  NULL,                    /* data */
-  0,                       /* reqlen */
-  0,                       /* actlen */
-  0,                       /* error_code */
-  status_stage_callback,   /* callback */
-  &setup_req                /* callback data */
-};
-
-static void status_stage_callback(void *cbdata)
-{
-  MXC_USB_Req_t *req = (MXC_USB_Req_t*)cbdata;
-
-  if (req->error_code == 0) {
-    /* Send ACK to Status stage */
-    MXC_USB_Ackstat(0);
-  } else {
-    /* STALL the Status stage */
-    MXC_USB_Stall(0);
-  }
-
-  /* Clear the request to indicate completion */
-  memset(req, 0, sizeof(MXC_USB_Req_t));
-}
-
 
 /******************************************************************************/
 
@@ -303,7 +273,7 @@ static void read_callback(void *cbdata)
 {
     MXC_USB_Req_t *req = (MXC_USB_Req_t*)cbdata;
     
-    if (USBD_P_EP[req->ep]) {
+    if (USBD_P_EP[req->ep] && (req->error_code == 0)) {
         USBD_P_EP[req->ep](USBD_EVT_OUT);
     }
 
@@ -312,6 +282,7 @@ static void read_callback(void *cbdata)
     req->cbdata = &out_requests[req->ep];
     req->reqlen = 64;
     req->actlen = 0;
+    req->error_code = 0;
     req->type = MAXUSB_TYPE_PKT;
 
     MXC_USB_ReadEndpoint(req);
@@ -329,6 +300,8 @@ void USBD_EnableEP (U32 EPNum)
     if (EPNum & USB_ENDPOINT_DIRECTION_MASK) {
         return;
     }
+    
+    EPNum &= EPNUM_MASK;
 
     out_requests[EPNum].ep = EPNum;
     out_requests[EPNum].data = out_data[EPNum];
@@ -351,7 +324,13 @@ void USBD_EnableEP (U32 EPNum)
  */
 void USBD_DisableEP (U32 EPNum)
 {
+    if (EPNum & USB_ENDPOINT_DIRECTION_MASK) {
+        return;
+    }
 
+    EPNum &= EPNUM_MASK;
+
+    MXC_USBHS->introuten &= ~(1 << EPNum);
 }
 
 /*
@@ -407,6 +386,8 @@ U32 USBD_ReadEP (U32 EPNum, U8 *pData, U32 size)
         MXC_USB_GetSetup((MXC_USB_SetupPkt *)pData);
     } else {
         if (out_requests[EPNum].actlen > 0) {
+            if (out_requests[EPNum].actlen > size)
+                out_requests[EPNum].actlen = size;
             memcpy(pData, out_data[EPNum], out_requests[EPNum].actlen);
         }
         size = out_requests[EPNum].actlen;
