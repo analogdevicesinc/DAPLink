@@ -45,18 +45,14 @@ void gpio_init(void)
 {
     MXC_GPIO_Config(&led_pin);
     MXC_GPIO_Config(&led2_pin);
-    MXC_GPIO_OutClr(led2_pin.port, led2_pin.mask);
-    MXC_GPIO_OutClr(led_pin.port, led_pin.mask);
 }
 
 /******************************************************************************/
 void gpio_set_hid_led(gpio_led_state_t state)
 {
     if (state == GPIO_LED_ON) {
-        MXC_GPIO_OutClr(led2_pin.port, led2_pin.mask);
         MXC_GPIO_OutClr(led_pin.port, led_pin.mask);
     } else {
-        MXC_GPIO_OutSet(led2_pin.port, led2_pin.mask);
         MXC_GPIO_OutSet(led_pin.port, led_pin.mask);
     }
 }//
@@ -64,13 +60,7 @@ void gpio_set_hid_led(gpio_led_state_t state)
 /******************************************************************************/
 void gpio_set_msc_led(gpio_led_state_t state)
 {
-    if (state == GPIO_LED_ON) {
-        MXC_GPIO_OutClr(led2_pin.port, led2_pin.mask);
-        MXC_GPIO_OutClr(led_pin.port, led_pin.mask);
-    } else {
-        MXC_GPIO_OutSet(led2_pin.port, led2_pin.mask);
-        MXC_GPIO_OutSet(led_pin.port, led_pin.mask);
-    }
+
 }
 
 /******************************************************************************/
@@ -78,10 +68,8 @@ void gpio_set_cdc_led(gpio_led_state_t state)
 {
     if (state == GPIO_LED_ON) {
         MXC_GPIO_OutClr(led2_pin.port, led2_pin.mask);
-        MXC_GPIO_OutClr(led_pin.port, led_pin.mask);
     } else {
         MXC_GPIO_OutSet(led2_pin.port, led2_pin.mask);
-        MXC_GPIO_OutSet(led_pin.port, led_pin.mask);
     }
 }//
 

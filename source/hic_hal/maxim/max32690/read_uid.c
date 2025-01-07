@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 #include "read_uid.h"
+#include "mxc_sys.h"
 
 #define UID_BASE 0x40001018
 
 void read_unique_id(uint32_t * id)
 {
-    uint32_t *uid_ptr = (uint32_t*)UID_BASE;
-    *id = uid_ptr[0] ^ uid_ptr[1] ^ uid_ptr[2] ^ uid_ptr[3];
+    MXC_SYS_GetUSN((uint8_t *)id, NULL);
 }
