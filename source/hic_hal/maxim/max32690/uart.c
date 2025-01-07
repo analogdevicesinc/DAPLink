@@ -31,7 +31,6 @@
 static uint32_t baudrate;
 
 static mxc_uart_regs_t *CdcAcmUart = MXC_UART2;
-static IRQn_Type CdcAcmUartIrqNumber = MXC_IRQ_EXT_COUNT;
 
 circ_buf_t write_buffer;
 uint8_t write_buffer_data[BUFFER_SIZE];
@@ -47,6 +46,7 @@ int32_t uart_initialize(void)
     int idx;
 
     MXC_UART_Init(CdcAcmUart, DEFAULT_BAUD_RATE, MXC_UART_IBRO_CLK);
+    MXC_UART_EnableInt(CdcAcmUart, MXC_F_UART_INT_EN_RX_OV | MXC_F_UART_INT_EN_RX_THD | MXC_F_UART_INT_EN_TX_HE);
     NVIC_EnableIRQ(UART2_IRQn);
 
     circ_buf_init(&write_buffer, write_buffer_data, sizeof(write_buffer_data));
@@ -122,13 +122,16 @@ int32_t uart_write_free(void)
 int32_t uart_write_data(uint8_t *data, uint16_t size)
 {
     uint16_t xfer_count = size;
+    int len = (int)size;
 
     if (circ_buf_count_used(&write_buffer) == 0) {
-        MXC_UART_Write(CdcAcmUart, data, (int*)&size);
+        MXC_UART_Write(CdcAcmUart, data, &len);
     }
 
-    xfer_count = circ_buf_write(&write_buffer, data, xfer_count);
-   
+    if (len != (int)size) {
+        xfer_count = circ_buf_write(&write_buffer, data + len, (int)size - len);
+    }
+
     return size - xfer_count;
 }
 
@@ -148,26 +151,17 @@ void UART_IRQHandler(void)
 
     if (intfl & MXC_F_UART_INT_FL_RX_OV) {
         // Flush RX FIFO, prepare for new characters
-        CdcAcmUart->ctrl |= MXC_F_UART_CTRL_RX_FLUSH;
+        MXC_UART_ClearRXFIFO(CdcAcmUart);
     }
 
-    if ((CdcAcmUart->status & MXC_F_UART_STATUS_RX_LVL) >> MXC_F_UART_STATUS_RX_LVL_POS) {
-        while ((CdcAcmUart->status & MXC_F_UART_STATUS_RX_EM) &&
-                circ_buf_count_free(&read_buffer)) {
-            circ_buf_push(&read_buffer, CdcAcmUart->fifo);
-        }
+    while (MXC_UART_GetRXFIFOAvailable(CdcAcmUart) &&
+            circ_buf_count_free(&read_buffer)) {
+        circ_buf_push(&read_buffer, CdcAcmUart->fifo);
     }
 
-    if (intfl & MXC_F_UART_STATUS_TX_EM) {
-        /*
-        	Transfer data from write buffer to transmit FIFO if
-        	a) write buffer contains data and
-        	b) transmit FIFO is not full
-        */
-        while (circ_buf_count_used(&write_buffer) &&
-                !(CdcAcmUart->status & MXC_F_UART_STATUS_TX_FULL)) {
-            CdcAcmUart->fifo = circ_buf_pop(&write_buffer);
-        }
+    while (circ_buf_count_used(&write_buffer) &&
+            MXC_UART_GetTXFIFOAvailable(CdcAcmUart)) {
+        CdcAcmUart->fifo = circ_buf_pop(&write_buffer);
     }
 }
 

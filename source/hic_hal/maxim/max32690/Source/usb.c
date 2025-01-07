@@ -670,7 +670,7 @@ static void event_out_data(uint32_t irqs)
         req->actlen += reqsize;
 
         if (!ep) {
-            if (req->actlen == req->reqlen) {
+            if ((req->type == MAXUSB_TYPE_PKT) || (req->actlen == req->reqlen)) {
                 /* No more data */
                 MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_SERV_OUTPKTRDY | MXC_F_USBHS_CSR0_DATA_END;
                 /* Done */

@@ -75,7 +75,7 @@ static int eventCallback(maxusb_event_t evt, void *data)
     case MAXUSB_EVENT_NOVBUS:
         MXC_USB_EventDisable(MAXUSB_EVENT_BRST);
         MXC_USB_EventDisable(MAXUSB_EVENT_SUSP);
-        MXC_USB_EventDisable(MAXUSB_EVENT_DPACT);
+        MXC_USB_EventDisable(MAXUSB_EVENT_BACT);
         MXC_USB_EventDisable(MAXUSB_EVENT_SUDAV);
 #ifdef __RTX
         if (USBD_RTX_DevTask) {
@@ -94,7 +94,7 @@ static int eventCallback(maxusb_event_t evt, void *data)
         MXC_USB_EventClear(MAXUSB_EVENT_SUSP);
         MXC_USB_EventEnable(MAXUSB_EVENT_SUSP, eventCallback, NULL);
         MXC_USB_EventEnable(MAXUSB_EVENT_SUDAV, eventCallback, NULL);
-        MXC_USB_EventEnable(MAXUSB_EVENT_DPACT, eventCallback, NULL);
+        MXC_USB_EventEnable(MAXUSB_EVENT_BACT, eventCallback, NULL);
 #ifdef __RTX
         if (USBD_RTX_DevTask) {
             isr_evt_set(USBD_EVT_POWER_ON,  USBD_RTX_DevTask);
@@ -147,18 +147,17 @@ static int eventCallback(maxusb_event_t evt, void *data)
 #endif
         break;
 
-    case MAXUSB_EVENT_DPACT:
+    case MAXUSB_EVENT_BACT:
         if (usbd_configured()) {
             USBD_CDC_ACM_SOF_Event();
         }
-        break;
-    
         break;
 
     case MAXUSB_EVENT_SUDAV:
         setup_waiting = 1;
         if (USBD_P_EP[0]) {
             USBD_P_EP[0](USBD_EVT_SETUP);
+            MXC_USB_Ackstat(0);
         }
         break;
 
@@ -300,18 +299,18 @@ void USBD_EnableEP (U32 EPNum)
     if (EPNum & USB_ENDPOINT_DIRECTION_MASK) {
         return;
     }
+    MXC_USB_Req_t *req = &out_requests[EPNum];
     
-    EPNum &= EPNUM_MASK;
+    req->ep         = EPNum;
+    req->data       = out_data[EPNum];
+    req->callback   = read_callback;
+    req->cbdata     = req;
+    req->reqlen     = 64;
+    req->actlen     = 0;
+    req->error_code = 0;
+    req->type       = MAXUSB_TYPE_PKT;
 
-    out_requests[EPNum].ep = EPNum;
-    out_requests[EPNum].data = out_data[EPNum];
-    out_requests[EPNum].callback = read_callback;
-    out_requests[EPNum].cbdata = &out_requests[EPNum];
-    out_requests[EPNum].reqlen = 64;
-    out_requests[EPNum].actlen = 0;
-    out_requests[EPNum].type = MAXUSB_TYPE_PKT;
-
-    MXC_USB_ReadEndpoint(&out_requests[EPNum]);
+    MXC_USB_ReadEndpoint(req);
 
 }
 
@@ -324,13 +323,7 @@ void USBD_EnableEP (U32 EPNum)
  */
 void USBD_DisableEP (U32 EPNum)
 {
-    if (EPNum & USB_ENDPOINT_DIRECTION_MASK) {
-        return;
-    }
 
-    EPNum &= EPNUM_MASK;
-
-    MXC_USBHS->introuten &= ~(1 << EPNum);
 }
 
 /*
