@@ -20,5 +20,6 @@
 
 void read_unique_id(uint32_t * id)
 {
-    MXC_SYS_GetUSN((uint8_t *)id, NULL);
+    uint32_t *uid_ptr = (uint32_t*)UID_BASE;
+    *id = uid_ptr[0] ^ uid_ptr[1] ^ uid_ptr[2] ^ uid_ptr[3];
 }

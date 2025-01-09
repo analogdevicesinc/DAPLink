@@ -24,63 +24,38 @@
 
 #include "max32690.h"
 
-// UART Tx
-#define PIN_TX_PORT         2
-#define PIN_TX_PIN          0
-#define PIN_DIP_TX_PORT     0
-#define PIN_DIP_TX_PIN      0
-
-// UART Rx
-#define PIN_RX_PORT         2
-#define PIN_RX_PIN          1
-#define PIN_DIP_RX_PORT     0
-#define PIN_DIP_RX_PIN      1
-
-// DAP LED
-#define PIN_DAP_LED_PORT    2
-#define PIN_DAP_LED_PIN     5
-
-// MSD LED
-#define PIN_MSD_LED_PORT    2
-#define PIN_MSD_LED_PIN     4
-
-// CDC LED
-#define PIN_CDC_LED_PORT    2
-#define PIN_CDC_LED_PIN     6
-
 // Non-Forwarded Reset In Pin
 #define PIN_RESET_IN_NO_FWRD_PORT  2
 #define PIN_RESET_IN_NO_FWRD_PIN   7
 
 // nRESET
-#define PIN_nRESET_PORT     3
-#define PIN_nRESET_PIN      7
-#define PIN_DIP_nRESET_PORT 0
-#define PIN_DIP_nRESET_PIN  4
+#define PIN_nRESET_PORT     2
+#define PIN_nRESET_PIN      29
 
 // SWCLK
-#define PIN_SWCLK_PORT      3
-#define PIN_SWCLK_PIN       2
-#define PIN_DIP_SWCLK_PORT  0
-#define PIN_DIP_SWCLK_PIN   2
+#define PIN_SWCLK_PORT      2
+#define PIN_SWCLK_PIN       25
 
 // SWDIO
-#define PIN_SWDIO_PORT      3
-#define PIN_SWDIO_PIN       3
-#define PIN_DIP_SWDIO_PORT  0
-#define PIN_DIP_SWDIO_PIN   3
+#define PIN_SWDIO_PORT      2
+#define PIN_SWDIO_PIN       8
 
-typedef enum {
-    IO_SWD_EXT,
-    IO_DIP_EXT
-} TARGET_INTERFACE;
-
-#define CDC_ACM_UART_SWD 2
-#define CDC_ACM_UART_DIP 0
-
-#define MXC_GPIO_SETMODE(pt, pn, m) (MXC_GPIO->out_mode[pt] = (MXC_GPIO->out_mode[pt] & ~(0xFU << (4 * pn))) | (m << (4 * pn)))
-#define MXC_GPIO_SETBIT(pt, pn)     (MXC_SETBIT(&MXC_GPIO->out_val[pt], pn))
-#define MXC_GPIO_CLRBIT(pt, pn)     (MXC_CLRBIT(&MXC_GPIO->out_val[pt], pn))
-#define MXC_GPIO_GETBIT(pt, pn)     (MXC_GETBIT(&MXC_GPIO->in_val[pt], pn))
+#define MXC_GPIO_SETMODE(pt, pn, m) \
+    { \
+      if (m == MXC_GPIO_FUNC_IN) { \
+        MXC_GPIO_GET_GPIO(pt)->outen_clr = pn; \
+        MXC_GPIO_GET_GPIO(pt)->en0_set = pn; \
+        MXC_GPIO_GET_GPIO(pt)->en1_clr = pn; \
+        MXC_GPIO_GET_GPIO(pt)->en2_clr = pn; \
+      } else { \
+        MXC_GPIO_GET_GPIO(pt)->outen_set = pn; \
+        MXC_GPIO_GET_GPIO(pt)->en0_set = pn; \
+        MXC_GPIO_GET_GPIO(pt)->en1_clr = pn; \
+        MXC_GPIO_GET_GPIO(pt)->en2_clr = pn; \
+      } \
+    }
+#define MXC_GPIO_SETBIT(pt, pn)     (MXC_SETBIT(&(MXC_GPIO_GET_GPIO(pt)->out_set), pn))
+#define MXC_GPIO_CLRBIT(pt, pn)     (MXC_SETBIT(&(MXC_GPIO_GET_GPIO(pt)->out_clr), pn))
+#define MXC_GPIO_GETBIT(pt, pn)     (MXC_GETBIT(&(MXC_GPIO_GET_GPIO(pt)->in), pn))
 
 #endif

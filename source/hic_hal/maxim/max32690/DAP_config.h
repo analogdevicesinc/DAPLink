@@ -40,6 +40,7 @@ This information includes:
 #include <stdio.h>
 #include "max32690.h"
 #include "gpio_regs.h"
+#include "gpio_mxc.h"
 #include "IO_Config.h"
 
 /// Processor Clock of the Cortex-M MCU used in the Debug Unit.
@@ -175,11 +176,14 @@ of the same I/O port. The following SWDIO I/O Pin functions are provided:
 */
 
 extern volatile uint32_t *tck_in;
-extern volatile uint32_t *tck_out;
+extern volatile uint32_t *tck_out_set;
+extern volatile uint32_t *tck_out_clr;
 extern volatile uint32_t *tms_in;
-extern volatile uint32_t *tms_out;
+extern volatile uint32_t *tms_out_set;
+extern volatile uint32_t *tms_out_clr;
 extern volatile uint32_t *rst_in;
-extern volatile uint32_t *rst_out;
+extern volatile uint32_t *rst_out_set;
+extern volatile uint32_t *rst_out_clr;
 
 extern uint32_t swdio_port;
 extern uint32_t swdio_pin;
@@ -188,6 +192,7 @@ extern uint32_t swclk_pin;
 extern uint32_t nreset_port;
 extern uint32_t nreset_pin;
 
+static volatile uint32_t swdio_out_enable = 0;
 // Configure DAP I/O pins ------------------------------
 
 /** Setup JTAG I/O pins: TCK, TMS, TDI, TDO, nTRST, and nRESET.
@@ -206,7 +211,26 @@ Configures the DAP Hardware I/O pins for Serial Wire Debug (SWD) mode:
 */
 __STATIC_INLINE void PORT_SWD_SETUP (void)
 {
-    
+    // Initial state
+    MXC_GPIO_SETBIT(swclk_port, swclk_pin);
+    MXC_GPIO_SETBIT(swdio_port, swdio_pin);
+    MXC_GPIO_SETBIT(nreset_port, nreset_pin);
+
+    // Output mode
+    MXC_GPIO_SETMODE(swclk_port, swclk_pin, MXC_GPIO_FUNC_OUT);
+    MXC_GPIO_SETMODE(swdio_port, swdio_pin, MXC_GPIO_FUNC_OUT);
+    MXC_GPIO_SETMODE(nreset_port, nreset_pin, MXC_GPIO_FUNC_OUT);
+    swdio_out_enable = 1;
+
+    tck_in = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swclk_port)->out), swclk_pin);
+    tck_out_set = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swclk_port)->out_set), swclk_pin);
+    tck_out_clr = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swclk_port)->out_clr), swclk_pin);
+    tms_in = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swdio_port)->in), swdio_pin);
+    tms_out_set = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swdio_port)->out_set), swdio_pin);
+    tms_out_clr = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swdio_port)->out_clr), swdio_pin);
+    rst_in = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(nreset_port)->out), nreset_pin);
+    rst_out_set = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(nreset_port)->out_set), nreset_pin);
+    rst_out_clr = (volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(nreset_port)->out_clr), nreset_pin);
 }
 
 /** Disable JTAG/SWD I/O Pins.
@@ -216,7 +240,9 @@ Disables the DAP Hardware I/O pins which configures:
 __STATIC_INLINE void PORT_OFF (void)
 {
     // High-z output mode
-    
+    MXC_GPIO_SETMODE(swclk_port, swclk_pin, MXC_GPIO_FUNC_IN);
+    MXC_GPIO_SETMODE(swdio_port, swdio_pin, MXC_GPIO_FUNC_IN);
+    MXC_GPIO_SETMODE(nreset_port, nreset_pin, MXC_GPIO_FUNC_IN);
 }
 
 // SWCLK/TCK I/O pin -------------------------------------
@@ -234,7 +260,7 @@ Set the SWCLK/TCK DAP hardware I/O pin to high level.
 */
 __STATIC_FORCEINLINE void     PIN_SWCLK_TCK_SET (void)
 {
-    *tck_out = 1;
+    *tck_out_set = 1;
 }
 
 /** SWCLK/TCK I/O pin: Set Output to Low.
@@ -242,7 +268,7 @@ Set the SWCLK/TCK DAP hardware I/O pin to low level.
 */
 __STATIC_FORCEINLINE void     PIN_SWCLK_TCK_CLR (void)
 {
-    *tck_out = 0;
+    *tck_out_clr = 1;
 }
 
 // SWDIO/TMS Pin I/O --------------------------------------
@@ -252,6 +278,9 @@ __STATIC_FORCEINLINE void     PIN_SWCLK_TCK_CLR (void)
 */
 __STATIC_FORCEINLINE uint32_t PIN_SWDIO_TMS_IN  (void)
 {
+    if (swdio_out_enable) {
+        return *(volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swdio_port)->out), swdio_pin);
+    }
     return *tms_in;
 }
 
@@ -260,7 +289,7 @@ Set the SWDIO/TMS DAP hardware I/O pin to high level.
 */
 __STATIC_FORCEINLINE void     PIN_SWDIO_TMS_SET (void)
 {
-    *tms_out = 1;
+    *tms_out_set = 1;
 }
 
 /** SWDIO/TMS I/O pin: Set Output to Low.
@@ -268,7 +297,7 @@ Set the SWDIO/TMS DAP hardware I/O pin to low level.
 */
 __STATIC_FORCEINLINE void     PIN_SWDIO_TMS_CLR (void)
 {
-    *tms_out = 0;
+    *tms_out_clr = 1;
 }
 
 /** SWDIO I/O pin: Get Input (used in SWD mode only).
@@ -276,6 +305,9 @@ __STATIC_FORCEINLINE void     PIN_SWDIO_TMS_CLR (void)
 */
 __STATIC_FORCEINLINE uint32_t PIN_SWDIO_IN  (void)
 {
+    if (swdio_out_enable) {
+        return *(volatile uint32_t *)BITBAND(&(MXC_GPIO_GET_GPIO(swdio_port)->out), swdio_pin);
+    }
     return *tms_in;
 }
 
@@ -284,7 +316,11 @@ __STATIC_FORCEINLINE uint32_t PIN_SWDIO_IN  (void)
 */
 __STATIC_FORCEINLINE void     PIN_SWDIO_OUT     (uint32_t bit)
 {
-    *tms_out = bit & 1;
+    if (bit & 1) {
+        *tms_out_set = 1;
+    } else {
+        *tms_out_clr = 1;
+    }
 }
 
 /** SWDIO I/O pin: Switch to Output mode (used in SWD mode only).
@@ -293,6 +329,9 @@ called prior \ref PIN_SWDIO_OUT function calls.
 */
 __STATIC_FORCEINLINE void     PIN_SWDIO_OUT_ENABLE  (void)
 {
+    MXC_GPIO_SETBIT(swdio_port, swdio_pin);
+    MXC_GPIO_SETMODE(swdio_port, swdio_pin, MXC_GPIO_FUNC_OUT);
+    swdio_out_enable = 1;
 }
 
 /** SWDIO I/O pin: Switch to Input mode (used in SWD mode only).
@@ -301,7 +340,9 @@ called prior \ref PIN_SWDIO_IN function calls.
 */
 __STATIC_FORCEINLINE void     PIN_SWDIO_OUT_DISABLE (void)
 {
-
+    MXC_GPIO_SETMODE(swdio_port, swdio_pin, MXC_GPIO_FUNC_IN);
+    MXC_GPIO_CLRBIT(swdio_port, swdio_pin);
+    swdio_out_enable = 0;
 }
 
 // TDI Pin I/O ---------------------------------------------
@@ -367,7 +408,11 @@ __STATIC_FORCEINLINE uint32_t PIN_nRESET_IN  (void)
 */
 __STATIC_FORCEINLINE void     PIN_nRESET_OUT (uint32_t bit)
 {
-    *rst_out = bit & 1;
+    if (bit & 1) {
+        *rst_out_set = 1;
+    } else {
+        *rst_out_clr = 1;
+    }
 }
 
 ///@}
@@ -447,7 +492,16 @@ Status LEDs. In detail the operation of Hardware I/O and LED pins are enabled an
 */
 __STATIC_INLINE void DAP_SETUP (void)
 {
-
+    // Weak pull-up disabled
+    MXC_GPIO_CLRBIT(swclk_port, swclk_pin);
+    MXC_GPIO_CLRBIT(swdio_port, swdio_pin);
+    // Weak pull-up enabled
+    MXC_GPIO_SETBIT(nreset_port, nreset_pin);
+    
+    // High-Z output mode
+    MXC_GPIO_SETMODE(swclk_port, swclk_pin, MXC_GPIO_FUNC_IN);
+    MXC_GPIO_SETMODE(swdio_port, swdio_pin, MXC_GPIO_FUNC_IN);
+    MXC_GPIO_SETMODE(nreset_port, nreset_pin, MXC_GPIO_FUNC_IN);
 }
 
 /** Reset Target Device with custom specific I/O pin or command sequence.

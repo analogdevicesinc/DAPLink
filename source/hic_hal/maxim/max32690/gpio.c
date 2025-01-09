@@ -22,11 +22,14 @@
 
 // Bitband pointers
 volatile uint32_t *tck_in;
-volatile uint32_t *tck_out;
+volatile uint32_t *tck_out_set;
+volatile uint32_t *tck_out_clr;
 volatile uint32_t *tms_in;
-volatile uint32_t *tms_out;
+volatile uint32_t *tms_out_set;
+volatile uint32_t *tms_out_clr;
 volatile uint32_t *rst_in;
-volatile uint32_t *rst_out;
+volatile uint32_t *rst_out_set;
+volatile uint32_t *rst_out_clr;
 
 uint32_t swdio_port;
 uint32_t swdio_pin;
@@ -43,6 +46,12 @@ const mxc_gpio_cfg_t led2_pin = { MXC_GPIO2, MXC_GPIO_PIN_12, MXC_GPIO_FUNC_OUT,
 /******************************************************************************/
 void gpio_init(void)
 {
+    swdio_port = PIN_SWDIO_PORT;
+    swdio_pin = PIN_SWDIO_PIN;
+    swclk_port = PIN_SWCLK_PORT;
+    swclk_pin = PIN_SWCLK_PIN;
+    nreset_port = PIN_nRESET_PORT;
+    nreset_pin = PIN_nRESET_PIN;
     MXC_GPIO_Config(&led_pin);
     MXC_GPIO_Config(&led2_pin);
 }
