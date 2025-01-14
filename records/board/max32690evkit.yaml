@@ -1,4 +1,6 @@
 common:
+    macros:
+        - CDC_ACM_DEFAULT_BAUDRATE=115200
     sources:
         board:
             - source/board/max32690evkit.c

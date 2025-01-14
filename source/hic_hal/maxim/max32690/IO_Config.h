@@ -39,6 +39,7 @@
 // SWDIO
 #define PIN_SWDIO_PORT      2
 #define PIN_SWDIO_PIN       8
+#define PIN_SWDIO_IN_PIN    12
 
 #define MXC_GPIO_SETMODE(pt, pn, m) \
     { \
