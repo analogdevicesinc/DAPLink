@@ -41,6 +41,7 @@ This information includes:
 #include "max32690.h"
 #include "gpio_regs.h"
 #include "gpio_mxc.h"
+#include "gpio_reva.h"
 #include "IO_Config.h"
 
 /// Processor Clock of the Cortex-M MCU used in the Debug Unit.
@@ -344,9 +345,14 @@ called prior \ref PIN_SWDIO_OUT function calls.
 */
 __STATIC_FORCEINLINE void     PIN_SWDIO_OUT_ENABLE  (void)
 {
-    MXC_GPIO_OutSet(swdio.port, swdio.mask);
+    MXC_GPIO_OutSet(en_o.port, en_o.mask);
+
+    MXC_GPIO_RevA_SetAF((mxc_gpio_reva_regs_t *)swdio.port, swdio.mask, MXC_GPIO_FUNC_OUT);
+    *tms_out_set = 1;
     MXC_GPIO_OutSet(en_swdout.port, en_swdout.mask);
     swdio_out_enable = 1;
+
+    MXC_GPIO_OutClr(en_o.port, en_o.mask);
 }
 
 /** SWDIO I/O pin: Switch to Input mode (used in SWD mode only).
@@ -355,8 +361,14 @@ called prior \ref PIN_SWDIO_IN function calls.
 */
 __STATIC_FORCEINLINE void     PIN_SWDIO_OUT_DISABLE (void)
 {
+    MXC_GPIO_OutSet(en_o.port, en_o.mask);
+
+    MXC_GPIO_RevA_SetAF((mxc_gpio_reva_regs_t *)swdio.port, swdio.mask, MXC_GPIO_FUNC_IN);
     MXC_GPIO_OutClr(en_swdout.port, en_swdout.mask);
+    *tms_out_clr = 1;
     swdio_out_enable = 0;
+
+    MXC_GPIO_OutClr(en_o.port, en_o.mask);
 }
 
 // TDI Pin I/O ---------------------------------------------
