@@ -27,20 +27,31 @@
 #include "mcr_regs.h"
 #include "mxc_delay.h"
 #include "usb_event.h"
+#include "tmr.h"
 
 #define __NO_USB_LIB_C
 #include "usb_config.c"
 
+#define CONT_TIMER MXC_TMR0 // Can be MXC_TMR0 through MXC_TMR5
 
 #define EPNUM_MASK  (~USB_ENDPOINT_DIRECTION_MASK)
 
-volatile int configured;
 static volatile int setup_waiting;
-volatile int suspended;
+static volatile int ep0_expect_zlp;
+static volatile int suspended;
 static MXC_USB_Req_t out_requests[MXC_USBHS_NUM_EP];
 static uint8_t out_data[MXC_USBHS_NUM_EP][64];
 
 /******************************************************************************/
+
+static void reset_state(void)
+{
+
+    suspended = 0;
+    setup_waiting = 0;
+    ep0_expect_zlp = 0;
+
+}
 
 void delay_us(unsigned int usec)
 {
@@ -75,7 +86,7 @@ static int eventCallback(maxusb_event_t evt, void *data)
     case MAXUSB_EVENT_NOVBUS:
         MXC_USB_EventDisable(MAXUSB_EVENT_BRST);
         MXC_USB_EventDisable(MAXUSB_EVENT_SUSP);
-        MXC_USB_EventDisable(MAXUSB_EVENT_BACT);
+        //MXC_USB_EventDisable(MAXUSB_EVENT_BACT);
         MXC_USB_EventDisable(MAXUSB_EVENT_SUDAV);
 #ifdef __RTX
         if (USBD_RTX_DevTask) {
@@ -94,7 +105,7 @@ static int eventCallback(maxusb_event_t evt, void *data)
         MXC_USB_EventClear(MAXUSB_EVENT_SUSP);
         MXC_USB_EventEnable(MAXUSB_EVENT_SUSP, eventCallback, NULL);
         MXC_USB_EventEnable(MAXUSB_EVENT_SUDAV, eventCallback, NULL);
-        MXC_USB_EventEnable(MAXUSB_EVENT_BACT, eventCallback, NULL);
+        //MXC_USB_EventEnable(MAXUSB_EVENT_BACT, eventCallback, NULL);
 #ifdef __RTX
         if (USBD_RTX_DevTask) {
             isr_evt_set(USBD_EVT_POWER_ON,  USBD_RTX_DevTask);
@@ -120,7 +131,8 @@ static int eventCallback(maxusb_event_t evt, void *data)
             }
 #endif
         }
-
+        
+        reset_state();
         usbd_reset_core();
 
 #ifdef __RTX
@@ -149,7 +161,7 @@ static int eventCallback(maxusb_event_t evt, void *data)
 
     case MAXUSB_EVENT_BACT:
         if (usbd_configured()) {
-            USBD_CDC_ACM_SOF_Event();
+            //USBD_CDC_ACM_SOF_Event();
         }
         break;
 
@@ -184,6 +196,10 @@ void USBD_Init (void)
     usb_opts.shutdown_callback = usbShutdownCallback;
 
     memset(out_requests, 0, sizeof(MXC_USB_Req_t) * MXC_USBHS_NUM_EP);
+
+    ep0_expect_zlp = 0;
+    setup_waiting = 0;
+    suspended = 0;
 
     /* Initialize the usb module */
     if (MXC_USB_Init(&usb_opts) != 0) {
@@ -230,6 +246,14 @@ void USBD_SetAddress (U32 adr, U32 setup)
     MXC_USB_SetFuncAddr(adr);
 }
 
+void TMR0_IRQHandler(void)
+{
+    MXC_TMR_ClearFlags(CONT_TIMER);
+    if (usbd_configured()) {
+        USBD_CDC_ACM_SOF_Event();
+    }
+}
+
 /*
  *  USB Device Configure Function
  *    Parameters:      cfg:   Device Configure/Deconfigure
@@ -237,7 +261,36 @@ void USBD_SetAddress (U32 adr, U32 setup)
  */
 void USBD_Configure (BOOL cfg)
 {
+    #define SOF_INT_US  1000
+    if (cfg) {
+        mxc_tmr_cfg_t tmr;
+        uint32_t periodTicks = MXC_TMR_GetPeriod(CONT_TIMER, MXC_TMR_APB_CLK, 32, SOF_INT_US);
+        /*
+        Steps for configuring a timer for PWM mode:
+        1. Disable the timer
+        2. Set the prescale value
+        3  Configure the timer for continuous mode
+        4. Set polarity, timer parameters
+        5. Enable Timer
+        */
+        MXC_TMR_Shutdown(CONT_TIMER);
+        tmr.pres = TMR_PRES_32;
+        tmr.mode = TMR_MODE_CONTINUOUS;
+        tmr.bitMode = TMR_BIT_MODE_32;
+        tmr.clock = MXC_TMR_APB_CLK;
+        tmr.cmp_cnt = periodTicks; //SystemCoreClock*(1/interval_time);
+        tmr.pol = 0;
+        if (MXC_TMR_Init(CONT_TIMER, &tmr, 0) != E_NO_ERROR) {
+            return;
+        }
 
+        MXC_TMR_EnableInt(CONT_TIMER);
+        NVIC_EnableIRQ(TMR0_IRQn);
+        MXC_TMR_Start(CONT_TIMER);
+    } else {
+        // Disable tmr
+        MXC_TMR_Stop(CONT_TIMER);
+    }
 }
 
 /*
@@ -276,6 +329,10 @@ static void read_callback(void *cbdata)
         USBD_P_EP[req->ep](USBD_EVT_OUT);
     }
 
+    if (!req->ep) {
+        return;
+    }
+
     req->data = out_data[req->ep];
     req->callback = read_callback;
     req->cbdata = &out_requests[req->ep];
@@ -299,6 +356,11 @@ void USBD_EnableEP (U32 EPNum)
     if (EPNum & USB_ENDPOINT_DIRECTION_MASK) {
         return;
     }
+
+    if (!EPNum) {
+        return;
+    }
+
     MXC_USB_Req_t *req = &out_requests[EPNum];
     
     req->ep         = EPNum;
@@ -335,7 +397,6 @@ void USBD_DisableEP (U32 EPNum)
  */
 void USBD_ResetEP (U32 EPNum)
 {
-
 }
 
 /*
@@ -360,6 +421,7 @@ void USBD_SetStallEP (U32 EPNum)
 void USBD_ClrStallEP (U32 EPNum)
 {
     MXC_USB_Unstall(EPNum & EPNUM_MASK);
+    USBD_EnableEP(EPNum);
 }
 
 /*
@@ -375,8 +437,27 @@ U32 USBD_ReadEP (U32 EPNum, U8 *pData, U32 size)
     EPNum &= EPNUM_MASK;
 
     if (EPNum == 0 && setup_waiting) {
+        USB_SETUP_PACKET *sup;
         setup_waiting = 0;
         MXC_USB_GetSetup((MXC_USB_SetupPkt *)pData);
+
+        sup = (USB_SETUP_PACKET*)pData;
+
+        if ( (sup->bmRequestType.Dir == REQUEST_HOST_TO_DEVICE) && (sup->wLength > 0) ) {
+            // There is an OUT stage for this setup packet. Register a request.
+            MXC_USB_Req_t *req = &out_requests[EPNum];
+    
+            req->ep         = EPNum;
+            req->data       = out_data[EPNum];
+            req->callback   = read_callback;
+            req->cbdata     = req;
+            req->reqlen     = sup->wLength;
+            req->actlen     = 0;
+            req->error_code = 0;
+            req->type       = MAXUSB_TYPE_TRANS;
+
+            MXC_USB_ReadEndpoint(req);
+        }
     } else {
         if (out_requests[EPNum].actlen > 0) {
             if (out_requests[EPNum].actlen > size)
@@ -437,9 +518,15 @@ U32 USBD_WriteEP (U32 EPNum, U8 *pData, U32 cnt)
 {
     EPNum &= EPNUM_MASK;
 
-    if (pData == NULL && cnt == 0) {
-        MXC_USB_Ackstat(0);
-        return 0;
+    if (EPNum == 0) {
+        if ((cnt == 0) && !ep0_expect_zlp) {
+            MXC_USB_Ackstat(0);
+            return 0;
+        } else if (cnt == USBD_MAX_PACKET0) {
+            ep0_expect_zlp = 1;
+        } else {
+            ep0_expect_zlp = 0;
+        }
     }
 
     memcpy(&write_req, &write_req_init, sizeof(MXC_USB_Req_t));
