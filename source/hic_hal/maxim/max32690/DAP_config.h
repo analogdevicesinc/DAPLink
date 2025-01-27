@@ -183,14 +183,9 @@ extern volatile uint32_t *tms_in;
 extern volatile uint32_t *tms_out_set;
 extern volatile uint32_t *tms_out_clr;
 extern volatile uint32_t *rst_in;
-extern volatile uint32_t *rst_out_set;
-extern volatile uint32_t *rst_out_clr;
 
-extern uint32_t swdio_port;
 extern uint32_t swdio_pin;
-extern uint32_t swclk_port;
 extern uint32_t swclk_pin;
-extern uint32_t nreset_port;
 extern uint32_t nreset_pin;
 
 static volatile uint32_t swdio_out_enable = 0;
@@ -220,36 +215,14 @@ Configures the DAP Hardware I/O pins for Serial Wire Debug (SWD) mode:
 */
 __STATIC_INLINE void PORT_SWD_SETUP (void)
 {
-    // Initial state
+    swdio_out_enable = 1;
 
-    MXC_GPIO_Config(&swclk);
-    MXC_GPIO_Config(&swdio);
-    MXC_GPIO_Config(&swdio_in);
-    MXC_GPIO_Config(&en_swdout);
-    MXC_GPIO_Config(&nreset);
-    
     MXC_GPIO_OutSet(swclk.port, swclk.mask);
     MXC_GPIO_OutSet(swdio.port, swdio.mask);
     MXC_GPIO_OutSet(en_swdout.port, en_swdout.mask);
-    MXC_GPIO_OutSet(nreset.port, nreset.mask);
-    
-    // Output mode
-    MXC_GPIO_Config(&en_o);
+    MXC_GPIO_OutClr(nreset.port, nreset.mask);
+
     MXC_GPIO_OutClr(en_o.port, en_o.mask);
-
-    tck_in = (volatile uint32_t *)BITBAND(&(swclk.port->out), PIN_SWCLK_PIN);
-    tck_out_set = (volatile uint32_t *)BITBAND(&(swclk.port->out_set), PIN_SWCLK_PIN);
-    tck_out_clr = (volatile uint32_t *)BITBAND(&(swclk.port->out_clr), PIN_SWCLK_PIN);
-
-    tms_in = (volatile uint32_t *)BITBAND(&(swdio_in.port->in), PIN_SWDIO_IN_PIN);
-    tms_out_set = (volatile uint32_t *)BITBAND(&(swdio.port->out_set), PIN_SWDIO_PIN);
-    tms_out_clr = (volatile uint32_t *)BITBAND(&(swdio.port->out_clr), PIN_SWDIO_PIN);
-
-    rst_in = (volatile uint32_t *)BITBAND(&(nreset.port->out), PIN_nRESET_PIN);
-    rst_out_set = (volatile uint32_t *)BITBAND(&(nreset.port->out_set), PIN_nRESET_PIN);
-    rst_out_clr = (volatile uint32_t *)BITBAND(&(nreset.port->out_clr), PIN_nRESET_PIN);
-
-    swdio_out_enable = 1;
 }
 
 /** Disable JTAG/SWD I/O Pins.
@@ -347,9 +320,9 @@ __STATIC_FORCEINLINE void     PIN_SWDIO_OUT_ENABLE  (void)
 {
     MXC_GPIO_OutSet(en_o.port, en_o.mask);
 
-    MXC_GPIO_RevA_SetAF((mxc_gpio_reva_regs_t *)swdio.port, swdio.mask, MXC_GPIO_FUNC_OUT);
-    *tms_out_set = 1;
     MXC_GPIO_OutSet(en_swdout.port, en_swdout.mask);
+    *tms_out_set = 1;
+    MXC_GPIO_RevA_SetAF((mxc_gpio_reva_regs_t *)swdio.port, swdio.mask, MXC_GPIO_FUNC_OUT);
     swdio_out_enable = 1;
 
     MXC_GPIO_OutClr(en_o.port, en_o.mask);
@@ -363,9 +336,9 @@ __STATIC_FORCEINLINE void     PIN_SWDIO_OUT_DISABLE (void)
 {
     MXC_GPIO_OutSet(en_o.port, en_o.mask);
 
-    MXC_GPIO_RevA_SetAF((mxc_gpio_reva_regs_t *)swdio.port, swdio.mask, MXC_GPIO_FUNC_IN);
     MXC_GPIO_OutClr(en_swdout.port, en_swdout.mask);
     *tms_out_clr = 1;
+    MXC_GPIO_RevA_SetAF((mxc_gpio_reva_regs_t *)swdio.port, swdio.mask, MXC_GPIO_FUNC_IN);
     swdio_out_enable = 0;
 
     MXC_GPIO_OutClr(en_o.port, en_o.mask);
@@ -435,9 +408,9 @@ __STATIC_FORCEINLINE uint32_t PIN_nRESET_IN  (void)
 __STATIC_FORCEINLINE void     PIN_nRESET_OUT (uint32_t bit)
 {
     if (bit & 1) {
-        *rst_out_set = 1;
+        MXC_GPIO_OutClr(nreset.port, nreset.mask);
     } else {
-        *rst_out_clr = 1;
+        MXC_GPIO_OutSet(nreset.port, nreset.mask);
     }
 }
 
@@ -518,7 +491,33 @@ Status LEDs. In detail the operation of Hardware I/O and LED pins are enabled an
 */
 __STATIC_INLINE void DAP_SETUP (void)
 {
+    // Initial state
 
+    MXC_GPIO_Config(&swclk);
+    MXC_GPIO_Config(&swdio);
+    MXC_GPIO_Config(&swdio_in);
+    MXC_GPIO_Config(&en_swdout);
+    MXC_GPIO_Config(&nreset);
+    
+    tck_in = (volatile uint32_t *)BITBAND(&(swclk.port->out), PIN_SWCLK_PIN);
+    tck_out_set = (volatile uint32_t *)BITBAND(&(swclk.port->out_set), PIN_SWCLK_PIN);
+    tck_out_clr = (volatile uint32_t *)BITBAND(&(swclk.port->out_clr), PIN_SWCLK_PIN);
+
+    tms_in = (volatile uint32_t *)BITBAND(&(swdio_in.port->in), PIN_SWDIO_IN_PIN);
+    tms_out_set = (volatile uint32_t *)BITBAND(&(swdio.port->out_set), PIN_SWDIO_PIN);
+    tms_out_clr = (volatile uint32_t *)BITBAND(&(swdio.port->out_clr), PIN_SWDIO_PIN);
+
+    rst_in = (volatile uint32_t *)BITBAND(&(nreset.port->out), PIN_nRESET_PIN);
+
+    swdio_out_enable = 1;
+
+    MXC_GPIO_OutSet(swclk.port, swclk.mask);
+    MXC_GPIO_OutSet(swdio.port, swdio.mask);
+    MXC_GPIO_OutSet(en_swdout.port, en_swdout.mask);
+    MXC_GPIO_OutClr(nreset.port, nreset.mask);
+    
+    // Output enable
+    MXC_GPIO_Config(&en_o);
 }
 
 /** Reset Target Device with custom specific I/O pin or command sequence.

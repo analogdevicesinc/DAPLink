@@ -40,6 +40,7 @@ static volatile int setup_waiting;
 static volatile int ep0_expect_zlp;
 static volatile int suspended;
 static MXC_USB_Req_t out_requests[MXC_USBHS_NUM_EP];
+static MXC_USB_Req_t in_requests[MXC_USBHS_NUM_EP];
 static uint8_t out_data[MXC_USBHS_NUM_EP][64];
 
 /******************************************************************************/
@@ -104,6 +105,7 @@ static int eventCallback(maxusb_event_t evt, void *data)
         MXC_USB_EventEnable(MAXUSB_EVENT_BRST, eventCallback, NULL);
         MXC_USB_EventClear(MAXUSB_EVENT_SUSP);
         MXC_USB_EventEnable(MAXUSB_EVENT_SUSP, eventCallback, NULL);
+        MXC_USB_EventClear(MAXUSB_EVENT_SUDAV);
         MXC_USB_EventEnable(MAXUSB_EVENT_SUDAV, eventCallback, NULL);
         //MXC_USB_EventEnable(MAXUSB_EVENT_BACT, eventCallback, NULL);
 #ifdef __RTX
@@ -169,7 +171,6 @@ static int eventCallback(maxusb_event_t evt, void *data)
         setup_waiting = 1;
         if (USBD_P_EP[0]) {
             USBD_P_EP[0](USBD_EVT_SETUP);
-            MXC_USB_Ackstat(0);
         }
         break;
 
@@ -329,8 +330,12 @@ static void read_callback(void *cbdata)
         USBD_P_EP[req->ep](USBD_EVT_OUT);
     }
 
-    if (!req->ep) {
+    if (!req->ep || (req->error_code == -1)) {
         return;
+    }
+
+    if (req->error_code == 0xff) {
+        MXC_USB_Ackstat(0);
     }
 
     req->data = out_data[req->ep];
@@ -465,6 +470,7 @@ U32 USBD_ReadEP (U32 EPNum, U8 *pData, U32 size)
             memcpy(pData, out_data[EPNum], out_requests[EPNum].actlen);
         }
         size = out_requests[EPNum].actlen;
+        out_requests[EPNum].actlen = 0;
     }
 
     return size;
@@ -475,34 +481,22 @@ static void write_callback(void *cbdata)
 {
     MXC_USB_Req_t *req = (MXC_USB_Req_t*)cbdata;
     
-    if (USBD_P_EP[req->ep]) {
+    if (USBD_P_EP[req->ep] && (req->error_code == 0)) {
         USBD_P_EP[req->ep](USBD_EVT_IN);
     }
 
     if (!MXC_USB_GetRequest(req->ep)) {
+        if (!req->ep) {
+            MXC_USB_SetSetupPhase(SETUP_IDLE);
+            MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_INPKTRDY | MXC_F_USBHS_CSR0_DATA_END;
+        }
         if (req->error_code == 0) {
-            if (!req->ep) {
-                MXC_USB_SetSetupPhase(SETUP_IDLE);
-                MXC_USBHS->csr0 |= MXC_F_USBHS_CSR0_INPKTRDY | MXC_F_USBHS_CSR0_DATA_END;
-            }
             MXC_USB_Ackstat(0);
         } else {
             MXC_USB_Stall(req->ep);
         }
     }
 }
-
-static MXC_USB_Req_t write_req;
-
-static const MXC_USB_Req_t write_req_init = {
-  0,                       /* ep */
-  NULL,                    /* data */
-  0,                       /* reqlen */
-  0,                       /* actlen */
-  0,                       /* error_code */
-  write_callback,          /* callback */
-  &write_req               /* callback data */
-};
 
 /*
  *  Write USB Device Endpoint Data
@@ -516,6 +510,7 @@ static const MXC_USB_Req_t write_req_init = {
 
 U32 USBD_WriteEP (U32 EPNum, U8 *pData, U32 cnt)
 {
+    MXC_USB_Req_t *req;
     EPNum &= EPNUM_MASK;
 
     if (EPNum == 0) {
@@ -529,13 +524,17 @@ U32 USBD_WriteEP (U32 EPNum, U8 *pData, U32 cnt)
         }
     }
 
-    memcpy(&write_req, &write_req_init, sizeof(MXC_USB_Req_t));
+    req = &in_requests[EPNum];
 
-    write_req.ep = EPNum;
-    write_req.data = pData;
-    write_req.reqlen = cnt;
+    req->ep = EPNum;
+    req->data = pData;
+    req->reqlen = cnt;
+    req->cbdata = req;
+    req->callback = write_callback;
+    req->actlen = 0;
+    req->error_code = 0;
     
-    if (MXC_USB_WriteEPPkg(&write_req) != 0) {
+    if (MXC_USB_WriteEPPkg(req) != 0) {
         cnt = 0;
     }
 

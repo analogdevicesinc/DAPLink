@@ -28,14 +28,9 @@ volatile uint32_t *tms_in;
 volatile uint32_t *tms_out_set;
 volatile uint32_t *tms_out_clr;
 volatile uint32_t *rst_in;
-volatile uint32_t *rst_out_set;
-volatile uint32_t *rst_out_clr;
 
-uint32_t swdio_port;
 uint32_t swdio_pin;
-uint32_t swclk_port;
 uint32_t swclk_pin;
-uint32_t nreset_port;
 uint32_t nreset_pin;
 
 int32_t uart_set_instance(uint32_t inst);
@@ -53,11 +48,8 @@ mxc_gpio_cfg_t nreset = { MXC_GPIO2, MXC_GPIO_PIN_29, MXC_GPIO_FUNC_OUT, MXC_GPI
 /******************************************************************************/
 void gpio_init(void)
 {
-    swdio_port = PIN_SWDIO_PORT;
     swdio_pin = PIN_SWDIO_PIN;
-    swclk_port = PIN_SWCLK_PORT;
     swclk_pin = PIN_SWCLK_PIN;
-    nreset_port = PIN_nRESET_PORT;
     nreset_pin = PIN_nRESET_PIN;
     MXC_GPIO_Config(&led_pin);
     MXC_GPIO_Config(&led2_pin);
