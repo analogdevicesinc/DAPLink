@@ -132,6 +132,5 @@ const target_family_descriptor_t g_maxim_max3266x_family = {
 
 const target_family_descriptor_t g_maxim_max3269x_family = {
     .family_id = kMaxim_MAX3269X_FamilyID,
-    .target_set_state = target_set_state_max3262x,
     .default_reset_type = kHardwareReset,
 };
