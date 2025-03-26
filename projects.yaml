@@ -579,6 +579,10 @@ projects:
         - *module_if
         - *module_hic_max32690
         - records/board/max32690evkit.yaml
+    max32690_max32657evkit_if:
+        - *module_if
+        - *module_hic_max32690
+        - records/board/max32657evkit.yaml
     nrf52820_microbit_bl:
         - *module_bl
         - records/hic_hal/nrf52820.yaml

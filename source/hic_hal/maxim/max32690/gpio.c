@@ -33,10 +33,8 @@ uint32_t swdio_pin;
 uint32_t swclk_pin;
 uint32_t nreset_pin;
 
-int32_t uart_set_instance(uint32_t inst);
-
-const mxc_gpio_cfg_t led_pin = { MXC_GPIO0, MXC_GPIO_PIN_14, MXC_GPIO_FUNC_OUT, MXC_GPIO_PAD_NONE, MXC_GPIO_VSSEL_VDDIO, MXC_GPIO_DRVSTR_0 };
-const mxc_gpio_cfg_t led2_pin = { MXC_GPIO2, MXC_GPIO_PIN_12, MXC_GPIO_FUNC_OUT, MXC_GPIO_PAD_NONE, MXC_GPIO_VSSEL_VDDIO, MXC_GPIO_DRVSTR_0 };
+// GPIO configuration
+const mxc_gpio_cfg_t led_pin = { MXC_GPIO1, MXC_GPIO_PIN_21, MXC_GPIO_FUNC_OUT, MXC_GPIO_PAD_NONE, MXC_GPIO_VSSEL_VDDIO, MXC_GPIO_DRVSTR_0 };
 
 mxc_gpio_cfg_t en_o = { MXC_GPIO2, MXC_GPIO_PIN_23, MXC_GPIO_FUNC_OUT, MXC_GPIO_PAD_NONE, MXC_GPIO_VSSEL_VDDIO, MXC_GPIO_DRVSTR_0 };
 mxc_gpio_cfg_t en_swdout = { MXC_GPIO2, MXC_GPIO_PIN_7, MXC_GPIO_FUNC_OUT, MXC_GPIO_PAD_NONE, MXC_GPIO_VSSEL_VDDIO, MXC_GPIO_DRVSTR_0 };
@@ -52,32 +50,31 @@ void gpio_init(void)
     swclk_pin = PIN_SWCLK_PIN;
     nreset_pin = PIN_nRESET_PIN;
     MXC_GPIO_Config(&led_pin);
-    MXC_GPIO_Config(&led2_pin);
 }
 
 /******************************************************************************/
 void gpio_set_hid_led(gpio_led_state_t state)
+{
+
+}//
+
+/******************************************************************************/
+void gpio_set_msc_led(gpio_led_state_t state)
 {
     if (state == GPIO_LED_ON) {
         MXC_GPIO_OutClr(led_pin.port, led_pin.mask);
     } else {
         MXC_GPIO_OutSet(led_pin.port, led_pin.mask);
     }
-}//
-
-/******************************************************************************/
-void gpio_set_msc_led(gpio_led_state_t state)
-{
-
 }
 
 /******************************************************************************/
 void gpio_set_cdc_led(gpio_led_state_t state)
 {
     if (state == GPIO_LED_ON) {
-        MXC_GPIO_OutClr(led2_pin.port, led2_pin.mask);
+        MXC_GPIO_OutClr(led_pin.port, led_pin.mask);
     } else {
-        MXC_GPIO_OutSet(led2_pin.port, led2_pin.mask);
+        MXC_GPIO_OutSet(led_pin.port, led_pin.mask);
     }
 }//
 

@@ -108,6 +108,7 @@ typedef enum _family_id {
     kMaxim_MAX3262X_FamilyID = CREATE_FAMILY_ID(kMaxim_VendorID, 1),
     kMaxim_MAX3266X_FamilyID = CREATE_FAMILY_ID(kMaxim_VendorID, 2),
     kMaxim_MAX3269X_FamilyID = CREATE_FAMILY_ID(kMaxim_VendorID, 3),
+    kMaxim_MAX3265X_FamilyID = CREATE_FAMILY_ID(kMaxim_VendorID, 4),
 } family_id_t;
 
 //! @brief Defines all characteristics of a device family.
