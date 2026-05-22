@@ -24,6 +24,8 @@
 #include "pwrman_regs.h"
 #include "uart.h"
 #include "circ_buf.h"
+#include "cortex_m.h"
+#include "cmsis_os2.h"
 
 // Size must be 2^n
 #define BUFFER_SIZE (4096)
@@ -40,6 +42,7 @@ uint8_t write_buffer_data[BUFFER_SIZE];
 circ_buf_t read_buffer;
 uint8_t read_buffer_data[BUFFER_SIZE];
 
+extern osStatus_t osDelay(uint32_t ticks);
 /******************************************************************************/
 static void set_bitrate(uint32_t target_baud)
 {
@@ -189,10 +192,14 @@ int32_t uart_initialize(void)
 
     // Set transmit almost empty level to three-quarters of the fifo size
     CdcAcmUart->tx_fifo_ctrl &= ~MXC_F_UART_TX_FIFO_CTRL_FIFO_AE_LVL;
-    CdcAcmUart->tx_fifo_ctrl |= (MXC_UART_FIFO_DEPTH - (MXC_UART_FIFO_DEPTH >> 2)) << MXC_F_UART_TX_FIFO_CTRL_FIFO_AE_LVL_POS;
+    CdcAcmUart->tx_fifo_ctrl |= (MXC_UART_FIFO_DEPTH - 1) << MXC_F_UART_TX_FIFO_CTRL_FIFO_AE_LVL_POS;
 
-    // Enable RX and TX interrupts
-    CdcAcmUart->inten = (MXC_F_UART_INTEN_RX_FIFO_NOT_EMPTY | MXC_F_UART_INTEN_RX_FIFO_OVERFLOW | MXC_F_UART_INTEN_TX_FIFO_AE);
+    // Enable RX, TX, and error interrupts
+    CdcAcmUart->inten = (MXC_F_UART_INTEN_RX_FIFO_NOT_EMPTY |
+                         MXC_F_UART_INTEN_RX_FIFO_OVERFLOW |
+                         MXC_F_UART_INTEN_RX_FRAMING_ERR |
+                         MXC_F_UART_INTEN_RX_PARITY_ERR |
+                         MXC_F_UART_INTEN_TX_FIFO_AE);
 
     // Enable UART
     CdcAcmUart->ctrl |= MXC_F_UART_CTRL_UART_EN;
@@ -228,9 +235,18 @@ void uart_set_control_line_state(uint16_t ctrl_bmp)
 /******************************************************************************/
 int32_t uart_reset(void)
 {
+    cortex_int_state_t state;
+
+    state = cortex_int_get_and_disable();
+    CdcAcmUart->intfl = CdcAcmUart->intfl;
+
+    CdcAcmUart->ctrl &= ~(MXC_F_UART_CTRL_RX_FIFO_EN | MXC_F_UART_CTRL_TX_FIFO_EN);
+    CdcAcmUart->ctrl |= (MXC_F_UART_CTRL_RX_FIFO_EN | MXC_F_UART_CTRL_TX_FIFO_EN);
+
     circ_buf_init(&write_buffer, write_buffer_data, sizeof(write_buffer_data));
     circ_buf_init(&read_buffer, read_buffer_data, sizeof(read_buffer_data));
 
+    cortex_int_restore(state);
     return 1;
 }
 
@@ -335,21 +351,35 @@ int32_t uart_write_free(void)
 int32_t uart_write_data(uint8_t *data, uint16_t size)
 {
     uint16_t xfer_count = size;
-
+    NVIC_DisableIRQ(CdcAcmUartIrqNumber);
     // Prioritize writes to TX FIFO, then to write_buffer
     if (circ_buf_count_used(&write_buffer) == 0) {
+#if 1
+        int avail = MXC_UART_FIFO_DEPTH - ((CdcAcmUart->tx_fifo_ctrl & MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY) >> MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY_POS);
+
+        while (avail && xfer_count) {
+            CdcAcmUart->intfl |= MXC_F_UART_INTFL_TX_DONE;
+            CdcAcmUartFifo->tx = *data++;
+            avail--;
+            xfer_count--;
+        }
+
+#else
         while ((((CdcAcmUart->tx_fifo_ctrl & MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY) >> MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY_POS) < MXC_UART_FIFO_DEPTH) &&
                 (xfer_count > 0)) {
-            NVIC_DisableIRQ(CdcAcmUartIrqNumber);
-            CdcAcmUart->intfl = MXC_F_UART_INTFL_TX_FIFO_AE;
+            CdcAcmUart->intfl |= MXC_F_UART_INTFL_TX_DONE;
             CdcAcmUartFifo->tx = *data++;
             xfer_count--;
-            NVIC_EnableIRQ(CdcAcmUartIrqNumber);
         }
-    }
+#endif
+        //if (xfer_count < size)
+        //    CdcAcmUart->intfl |= MXC_F_UART_INTFL_TX_FIFO_AE;
 
+    }
     xfer_count = circ_buf_write(&write_buffer, data, xfer_count);
 
+
+    NVIC_EnableIRQ(CdcAcmUartIrqNumber);
     return size - xfer_count;
 }
 
@@ -367,37 +397,60 @@ void UART_IRQHandler(void)
     // Clear interrupts that will be serviced
     CdcAcmUart->intfl = intfl;
 
-    if (intfl & MXC_F_UART_INTFL_RX_FIFO_OVERFLOW) {
-        // Flush RX FIFO, prepare for new characters
+    if (intfl & (MXC_F_UART_INTFL_RX_FIFO_OVERFLOW |
+                 MXC_F_UART_INTFL_RX_FRAMING_ERR |
+                 MXC_F_UART_INTFL_RX_PARITY_ERR)) {
+
+        // Flush RX hardware FIFO
         CdcAcmUart->ctrl &= ~MXC_F_UART_CTRL_RX_FIFO_EN;
         CdcAcmUart->ctrl |= MXC_F_UART_CTRL_RX_FIFO_EN;
-    }
+        return;
 
+    } 
+    
     if (intfl & MXC_F_UART_INTFL_RX_FIFO_NOT_EMPTY) {
         while ((CdcAcmUart->rx_fifo_ctrl & MXC_F_UART_RX_FIFO_CTRL_FIFO_ENTRY) &&
                 circ_buf_count_free(&read_buffer)) {
             circ_buf_push(&read_buffer, CdcAcmUartFifo->rx);
-            CdcAcmUart->intfl = MXC_F_UART_INTFL_RX_FIFO_NOT_EMPTY;
+            CdcAcmUart->intfl |= MXC_F_UART_INTFL_RX_FIFO_NOT_EMPTY;
         }
     }
 
+
+
+    // TX PATH
     if (intfl & MXC_F_UART_INTFL_TX_FIFO_AE) {
         /*
         	Transfer data from write buffer to transmit FIFO if
         	a) write buffer contains data and
         	b) transmit FIFO is not full
         */
+#if 0
         while (circ_buf_count_used(&write_buffer) &&
                 (((CdcAcmUart->tx_fifo_ctrl & MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY) >> MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY_POS) < MXC_UART_FIFO_DEPTH)) {
+            CdcAcmUart->intfl |= MXC_F_UART_INTFL_TX_DONE;
             CdcAcmUartFifo->tx = circ_buf_pop(&write_buffer);
         }
+#else
+        int avail = MXC_UART_FIFO_DEPTH - ((CdcAcmUart->tx_fifo_ctrl & MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY) >> MXC_F_UART_TX_FIFO_CTRL_FIFO_ENTRY_POS);
+        int xfer_count = circ_buf_count_used(&write_buffer);
+        while (avail && xfer_count) {
+            CdcAcmUart->intfl |= MXC_F_UART_INTFL_TX_DONE;
+            CdcAcmUartFifo->tx = circ_buf_pop(&write_buffer);
+            avail--;
+            xfer_count--;
+        }
+#endif
     }
+
 }
 
 /******************************************************************************/
 void UART0_IRQHandler(void)
 {
+    NVIC_DisableIRQ(CdcAcmUartIrqNumber);
     UART_IRQHandler();
+    NVIC_EnableIRQ(CdcAcmUartIrqNumber);
 }
 
 /******************************************************************************/

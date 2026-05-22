@@ -152,11 +152,15 @@ int32_t USBD_CDC_ACM_PortSetControlLineState(uint16_t ctrl_bmp)
     uart_set_control_line_state(ctrl_bmp);
     return (1);
 }
-
+#if 0
 void cdc_process_event()
 {
     int32_t len_data = 0;
     uint8_t data[64];
+    static int32_t evt_cnt = 0;
+    int32_t tx_throttle = 100;
+
+    evt_cnt++;
 
     len_data = USBD_CDC_ACM_DataFree();
 
@@ -174,22 +178,76 @@ void cdc_process_event()
         }
     }
 
-    len_data = uart_write_free();
+    if (evt_cnt % tx_throttle == 0) {
+        evt_cnt = 0;
+        len_data = uart_write_free();
+
+        if (len_data > sizeof(data)) {
+            len_data = sizeof(data);
+        }
+
+        if (len_data) {
+            len_data = USBD_CDC_ACM_DataRead(data, len_data);
+        }
+
+        if (len_data) {
+            if (uart_write_data(data, len_data)) {
+                main_blink_cdc_led(MAIN_LED_FLASH);
+            }
+        }
+    }
+    // Always process events
+    main_cdc_send_event();
+}
+
+#else
+void cdc_process_event()
+{
+    int32_t len_data = 0;
+    uint8_t data[64];
+    static int throttle = 0;
+
+    throttle++;
+    if (throttle % 6 == 0) {
+        main_cdc_send_event();
+        return;
+    }
+
+    len_data = USBD_CDC_ACM_DataFree();
 
     if (len_data > sizeof(data)) {
         len_data = sizeof(data);
     }
 
     if (len_data) {
-        len_data = USBD_CDC_ACM_DataRead(data, len_data);
+        len_data = uart_read_data(data, len_data);
     }
 
     if (len_data) {
-        if (uart_write_data(data, len_data)) {
+        if (USBD_CDC_ACM_DataSend(data , len_data)) {
             main_blink_cdc_led(MAIN_LED_FLASH);
         }
     }
 
+    if (throttle % 25 == 0 ) {
+        throttle = 0;
+        len_data = uart_write_free();
+
+        if (len_data > sizeof(data)) {
+            len_data = sizeof(data);
+        }
+
+        if (len_data) {
+            len_data = USBD_CDC_ACM_DataRead(data, len_data);
+        }
+
+        if (len_data) {
+            if (uart_write_data(data, len_data)) {
+                main_blink_cdc_led(MAIN_LED_FLASH);
+            }
+        }
+    }
     // Always process events
     main_cdc_send_event();
 }
+#endif
